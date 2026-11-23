@@ -2,19 +2,20 @@ name: prepare
 on:
   push:
     branches: [main]
-    paths:
-      - "**/*.b64"
-      - ".github/workflows/prepare.yml"
+  workflow_dispatch:
 permissions:
   contents: write
   pages: write
   id-token: write
 concurrency:
-  group: prepare
+  group: pages
   cancel-in-progress: false
 jobs:
   decode:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: Decode base64 assets
@@ -22,21 +23,23 @@ jobs:
           set -euo pipefail
           count=$(find . -name '*.b64' | wc -l)
           echo "found $count b64 files"
-          find . -name '*.b64' | while read -r f; do
-            dest="${f%.b64}"
-            mkdir -p "$(dirname "$dest")"
-            base64 -d "$f" > "$dest"
-            rm -f "$f"
-            echo "decoded $dest ($(wc -c < "$dest") bytes)"
-          done
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then
-            echo "no changes"
-          else
-            git commit -m "Restore binary media and fonts"
-            git push
+          if [ "$count" -gt 0 ]; then
+            find . -name '*.b64' | while read -r f; do
+              dest="${f%.b64}"
+              mkdir -p "$(dirname "$dest")"
+              base64 -d "$f" > "$dest"
+              rm -f "$f"
+              echo "decoded $dest ($(wc -c < "$dest") bytes)"
+            done
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            if git diff --cached --quiet; then
+              echo "no changes"
+            else
+              git commit -m "Restore binary media and fonts"
+              git push
+            fi
           fi
       - name: Stage Pages directory
         run: |
@@ -46,13 +49,12 @@ jobs:
           test -f _publish/index.html
           test -f _publish/.nojekyll
           test -f _publish/media/pre-wedding.mp4
-          ls -la _publish/media | head
+          test -f _publish/media/wedding-kiss.jpg
       - uses: actions/configure-pages@v5
-        continue-on-error: true
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
-        continue-on-error: true
         with:
           path: _publish
       - uses: actions/deploy-pages@v4
-        continue-on-error: true
         id: deployment
